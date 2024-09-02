@@ -1,0 +1,14 @@
+<launch>
+    <node pkg="sensor_brainco" type="brainco_topic_proj" name="brainco_topic_proj" output="screen" />
+
+    <node pkg="sensor_brainco" type="data_sensor_visual" name="data_sensor_visual" output="screen" />
+
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find sensor_brainco)/config/rviz_hand.rviz"/>
+
+    <node name="rqt_plot" pkg="rqt_plot" type="rqt_plot" />
+
+    <node pkg="sensor_brainco" type="motion_control" name="motion_control" output="screen" />
+
+</launch>
+
+
