@@ -4,6 +4,42 @@ sensor_brainco::brainco_ brainco_Ctrl_msg;
 sensor_brainco::brainco_ brainco_FB_msg;
 sensor_brainco::stm32data recv_stm32data;
 
+// 定义一阶巴特沃斯高通滤波器
+class ButterworthHighPassFilter {
+public:
+    ButterworthHighPassFilter(double cutoffFreq, double sampleRate)
+        : cutoffFreq(cutoffFreq), sampleRate(sampleRate), prevInput(0.0), prevOutput(0.0) {
+        double RC = 1.0 / (cutoffFreq * 2 * M_PI);
+        double dt = 1.0 / sampleRate;
+        alpha = dt / (RC + dt);
+    }
+
+    double process(double input) {
+        double output = alpha * (prevOutput + input - prevInput);
+        prevInput = input;
+        prevOutput = output;
+        return output;
+    }
+
+private:
+    double cutoffFreq;
+    double sampleRate;
+    double alpha;
+    double prevInput;
+    double prevOutput;
+};
+ButterworthHighPassFilter filter_0_1(3.0, 200.0);
+ButterworthHighPassFilter filter_0_2(3.0, 200.0);
+ButterworthHighPassFilter filter_1_1(3.0, 200.0);
+ButterworthHighPassFilter filter_1_2(3.0, 200.0);
+double fil_sig_0_1;
+double fil_sig_0_2;
+double fil_sig_1_1;
+double fil_sig_1_2;
+uint8_t touch_flag_0_1;
+uint8_t touch_flag_0_2;
+uint8_t touch_flag_1_1;
+uint8_t touch_flag_1_2;
 int main( int argc, char** argv )
 {
     ros::init(argc, argv, "motion_control");
@@ -25,13 +61,37 @@ int main( int argc, char** argv )
 // 接收到订阅的消息后，会进入消息回调函数
 void sensorInfoCallback(const sensor_brainco::stm32data::ConstPtr& msg)
 {
-    memcpy(&recv_stm32data,msg.get(),128);
+    memcpy(&recv_stm32data,msg.get(),160);
     
+    fil_sig_0_1=filter_0_1.process(recv_stm32data.voltage[1]);
+    if(fil_sig_0_1<0)   fil_sig_0_1=-fil_sig_0_1;
+    if(fil_sig_0_1>13)  
+    {
+        touch_flag_0_1=1;
+        printf("%f \r\n",fil_sig_0_1);
+    }
+
+    // fil_sig_0_2=filter_0_2.process(recv_stm32data.voltage[9]);
+    // if(fil_sig_0_2<0)   fil_sig_0_2=-fil_sig_0_2;
+
+    fil_sig_1_1=filter_1_1.process(recv_stm32data.voltage[3]);
+    if(fil_sig_1_1<0)   fil_sig_1_1=-fil_sig_1_1;
+    if(fil_sig_1_1>4)  
+    {
+        touch_flag_1_1=1;
+        printf("%f \r\n",fil_sig_1_1);
+    }
+
+    // fil_sig_1_2=filter_1_2.process(recv_stm32data.voltage[2]);
+    // if(fil_sig_1_2<0)   fil_sig_1_2=-fil_sig_1_2;
+
+
+
     // printf("Subcribe sensor Info:\n");
     // printf("voltage:\n");
     // for(uint8_t i=0;i<14;i++)
     // {
-    //     printf("%4d ",recv_stm32data.voltage[i]);
+    //     printf("%f ",recv_stm32data.voltage[i]);
     // }
     // printf("\n");
     // printf("diff:\n");
@@ -114,6 +174,20 @@ void brainco_Ctrl_pub(ros::Publisher pub,ros::Rate rosrate)//向brainco请求反
         
     }
 }
+void set_catch(uint8_t value)
+{
+    int8_t pos[6]={0,0,0,0,0,0};
+    pos[0]=(int8_t)(47.0/100.0*value);pos[1]=93;pos[2]=(int8_t)(57.0/100.0*value);
+    if(pos[2]-8>0)
+    {
+        pos[3]=pos[2]-8;
+        pos[4]=pos[2]+3;
+        pos[5]=pos[2]-5;
+    }
+    
+    dirctrl_brainco(1,pos);
+    // ROS_INFO("pos[0]:%d,pos[2]:%d",pos[0],pos[2]);
+}
 void main_proj()//向brainco请求反馈数据,然后发布反馈数据fb
 {
     uint8_t ctrl_flag=1;
@@ -126,14 +200,34 @@ void main_proj()//向brainco请求反馈数据,然后发布反馈数据fb
     int8_t start_pos[3]={0};//刚接触时的位置
     int8_t active_point=-1;
     int16_t press[5]={0};//刚接触时的压力
-    int8_t thumb_value=25;//大拇指
-    int8_t index_value=35;//食指
+    int8_t thumb_value=47;//大拇指
+    int8_t index_value=57;//食指
 
     
     sleep(2);
-    pos[0]=47;pos[1]=93;pos[2]=57;//食指和大拇指合拢抓取物体
-    // pos[0]=0;pos[1]=93;pos[2]=0;
-    dirctrl_brainco(1,pos);
+    // // pos[0]=47;pos[1]=93;pos[2]=57;//食指和大拇指合拢抓取物体
+    // pos[0]=20;pos[1]=93;pos[2]=30;
+    // // pos[0]=0;pos[1]=93;pos[2]=0;
+    // dirctrl_brainco(1,pos);
+    set_catch(0);
+    sleep(1);
+    touch_flag_0_1=0;
+    touch_flag_1_1=0;
+    sleep(2);
+    for(int i=0;i<100;i++)
+    {
+        set_catch(i);
+        for(int cnt=0;cnt<200;cnt++)
+        {
+            usleep(100);
+            if(touch_flag_0_1 && touch_flag_1_1)goto touched;
+        }
+        // usleep(1000*50);
+    }
+    touched:
+
+    // set_catch(40);
+
     while(1);
 
     // dirctrl_brainco(1,pos);
@@ -273,7 +367,7 @@ void main_proj()//向brainco请求反馈数据,然后发布反馈数据fb
                 break;
                 
         }
-        usleep(100*1);
+        // usleep(100*1);
     }
 
 }

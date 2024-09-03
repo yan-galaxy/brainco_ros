@@ -25,7 +25,7 @@ int main( int argc, char** argv )
     ros::NodeHandle n_stm32,n_rviz,n_brainco_client;
 
     ros::Publisher stm32data_info_pub = n_stm32.advertise<sensor_brainco::stm32data>("/stm32data_info", 38);//传感器信息
-    ros::Rate loop_rate1(100);
+    ros::Rate loop_rate1(200);
     WzSerialportPlus wzSerialportPlus;
     wzSerialportPlus.setReceiveCalback(serial_callback);
 
@@ -417,9 +417,16 @@ void ros_to_sensor_proj(ros::Publisher pub,ros::Rate rosrate)
             // saveDataToFile("/root/ros_noetic/18ws/src/new_code/ros-recv-stm32/sensor_brainco/record_data/filter_compare_data/lagFilteredData" + std::to_string(i) + ".txt", lagFilteredData[i]);
         }
 
+        // inputData[1][0]=filter_0_1.process(inputData[1][0]);
+        // if(inputData[1][0]<0)inputData[1][0]=-inputData[1][0];
+        // inputData[9][0]=filter_0_2.process(inputData[9][0])+100;
+        // inputData[3][0]=filter_1_1.process(inputData[3][0])+200;
+        // inputData[2][0]=filter_1_2.process(inputData[2][0])+300;
         for(int i=0;i<14;i++)
         {
-            stm32data_msg.voltage[i]=(uint16_t)firFilteredData[i][0];//进行fir滤波
+            // stm32data_msg.voltage[i]=(uint16_t)firFilteredData[i][0];//进行fir滤波
+            stm32data_msg.voltage[i]=inputData[i][0];//不滤波
+            
         }
         for(size_t i=1;i<=3;i++)
         {
