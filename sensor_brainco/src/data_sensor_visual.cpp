@@ -17,6 +17,60 @@ uint16_t raw_voldata[16];
 
 std::atomic<bool> keepRunning(true);
 
+// 定义一阶巴特沃斯高通滤波器
+class ButterworthHighPassFilter {
+public:
+    ButterworthHighPassFilter(double cutoffFreq, double sampleRate)
+        : cutoffFreq(cutoffFreq), sampleRate(sampleRate), prevInput(0.0), prevOutput(0.0) {
+        double RC = 1.0 / (cutoffFreq * 2 * M_PI);
+        double dt = 1.0 / sampleRate;
+        alpha = dt / (RC + dt);
+    }
+
+    double process(double input) {
+        double output = alpha * (prevOutput + input - prevInput);
+        prevInput = input;
+        prevOutput = output;
+        return output;
+    }
+
+private:
+    double cutoffFreq;
+    double sampleRate;
+    double alpha;
+    double prevInput;
+    double prevOutput;
+};
+ButterworthHighPassFilter filter_0_1(5.0, 200.0);
+ButterworthHighPassFilter filter_0_2(5.0, 200.0);
+ButterworthHighPassFilter filter_1_1(5.0, 200.0);
+ButterworthHighPassFilter filter_1_2(5.0, 200.0);
+
+
+class InertialFilter {
+public:
+    InertialFilter(double alpha, double dt) : alpha_(alpha), dt_(dt), initialized_(false) {}
+
+    double filter(double acc) {
+        if (!initialized_) {
+            // 初始化速度估计为第一个加速度值
+            velocity_ = acc;
+            initialized_ = true;
+        } else {
+            // 应用一阶惯性滤波器公式
+            velocity_ = alpha_ * (acc - velocity_) + velocity_;
+        }
+        return velocity_;
+    }
+
+private:
+    double alpha_; // 滤波系数，通常介于0和1之间
+    double dt_;    // 时间间隔
+    double velocity_; // 当前速度估计
+    bool initialized_; // 用于标记是否已经初始化速度
+};
+InertialFilter filter_LP_0_1(0.2, 0.005);
+InertialFilter filter_LP_1_1(0.2, 0.005);
 int main( int argc, char** argv )
 {
     uint8_t i=0;
@@ -417,11 +471,31 @@ void ros_to_sensor_proj(ros::Publisher pub,ros::Rate rosrate)
             // saveDataToFile("/root/ros_noetic/18ws/src/new_code/ros-recv-stm32/sensor_brainco/record_data/filter_compare_data/lagFilteredData" + std::to_string(i) + ".txt", lagFilteredData[i]);
         }
 
+        //先高通再低通
         // inputData[1][0]=filter_0_1.process(inputData[1][0]);
         // if(inputData[1][0]<0)inputData[1][0]=-inputData[1][0];
-        // inputData[9][0]=filter_0_2.process(inputData[9][0])+100;
-        // inputData[3][0]=filter_1_1.process(inputData[3][0])+200;
-        // inputData[2][0]=filter_1_2.process(inputData[2][0])+300;
+
+        // stm32data_msg.diff[1] = inputData[1][0];//未低通滤波
+        // inputData[1][0] = filter_LP_0_1.filter(inputData[1][0]);
+        
+        // inputData[3][0]=filter_1_1.process(inputData[3][0]);
+        // if(inputData[3][0]<0)inputData[3][0]=-inputData[3][0];
+
+        // stm32data_msg.diff[3] = inputData[3][0];//未低通滤波
+        // inputData[3][0] = filter_LP_1_1.filter(inputData[3][0]);
+
+        // 先低通再高通
+        inputData[1][0]=filter_LP_0_1.filter(inputData[1][0]);
+        stm32data_msg.diff[1] = inputData[1][0];//未高通滤波
+        inputData[1][0] = filter_0_1.process(inputData[1][0]);
+        if(inputData[1][0]<0)inputData[1][0]=-inputData[1][0];
+        
+        inputData[3][0]=filter_LP_1_1.filter(inputData[3][0]);
+        stm32data_msg.diff[3] = inputData[3][0];//未低通滤波
+        inputData[3][0] = filter_1_1.process(inputData[3][0]);
+        if(inputData[3][0]<0)inputData[3][0]=-inputData[3][0];
+
+
         for(int i=0;i<14;i++)
         {
             // stm32data_msg.voltage[i]=(uint16_t)firFilteredData[i][0];//进行fir滤波
@@ -433,36 +507,7 @@ void ros_to_sensor_proj(ros::Publisher pub,ros::Rate rosrate)
             // saveDataToFile("/root/ros_noetic/18ws/src/new_code/ros-recv-stm32/sensor_brainco/record_data/draw_data/"+time_str+"vol_data[" 
             // + std::to_string(i) + "]" + ".txt",firFilteredData[i]);
         }
-        if(cnt<200)
-        {
-            for(uint8_t i=0;i<14;i++)
-            {
-                ini_aver[i]+=stm32data_msg.voltage[i]/100.0;
-            }
-            
-            cnt++;
-        }
-        else if(cnt==200)
-        {
-            for(uint8_t i=0;i<14;i++)
-            {
-                // stm32data_msg.initial_value[i]=stm32data_msg.voltage[i];
-                stm32data_msg.initial_value[i]=ini_aver[i];
-            }
-            cnt++;
-        }
-        else
-        {
-            for(uint8_t i=0;i<14;i++)
-            {
-                stm32data_msg.diff[i]+=calculateRateOfChange(pre_vol[i],stm32data_msg.voltage[i]);
-            }
-        }
-
-        for(uint8_t i=0;i<14;i++)
-        {
-            pre_vol[i]=stm32data_msg.voltage[i];
-        }
+        
 
         // 发布消息
 		pub.publish(stm32data_msg);

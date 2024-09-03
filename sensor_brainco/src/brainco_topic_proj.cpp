@@ -362,7 +362,7 @@ int data_request(int serial_fd,int8_t* pos,int8_t* speed,int8_t* current)
     {
         wrong_cnt++;
         // printf("\nCRC wrong! %d %d\n\n",right_cnt,wrong_cnt);
-        std::cerr << "CRC wrong! " << right_cnt <<" "<<wrong_cnt << std::endl;
+        // std::cerr << "CRC wrong! " << right_cnt <<" "<<wrong_cnt << std::endl;
         // perror("CRC wrong! \n");
         return -1;
     }
